@@ -1,152 +1,212 @@
 // pages/index.js
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect } from 'react';
 
 export default function HomePage() {
-  const [user, setUser] = useState(null);
-  const [communityImages, setCommunityImages] = useState([]);
-
-  // Detectar si hay usuario logueado
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
+    // ─── LOADER ───────────────────────────────────────────────────────
+    const hideLoader = () => {
+      const loader = document.getElementById('siteLoader');
+      const content = document.getElementById('siteContent');
+      if (loader) loader.classList.add('hidden');
+      if (content) content.setAttribute('aria-hidden', 'false');
     };
-    getSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
+    if (document.readyState === 'complete') {
+      setTimeout(hideLoader, 120);
+    } else {
+      window.addEventListener('load', () => setTimeout(hideLoader, 160));
+    }
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+    // ─── SCREENSAVER (5 MIN IDLE) ─────────────────────────────────────
+    let idleTimer;
+    const SCREENSAVER_DELAY = 5 * 60 * 1000; // 5 minutes
+    const screensaver = document.getElementById('screensaver');
 
-  // Cargar imágenes aprobadas de la comunidad
-  useEffect(() => {
-    const fetchImages = async () => {
-      const { data, error } = await supabase
-        .from('images')
-        .select('*')
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false });
-
-      if (!error) {
-        setCommunityImages(data || []);
+    const showScreensaver = () => {
+      if (screensaver) {
+        screensaver.classList.remove('hide');
+        screensaver.classList.add('show');
       }
     };
-    fetchImages();
-  }, []);
-
-  // Todo el comportamiento visual se maneja con useEffect + DOM (como en tu original)
-  useEffect(() => {
-    // --- Loader ---
-    const hideLoader = () => {
-      document.getElementById('siteLoader')?.classList.add('hidden');
-      document.getElementById('siteContent')?.setAttribute('aria-hidden', 'false');
+    const hideScreensaver = () => {
+      if (screensaver) {
+        screensaver.classList.remove('show');
+        screensaver.classList.add('hide');
+      }
     };
-    if (document.readyState === 'complete') setTimeout(hideLoader, 120);
-    else window.addEventListener('load', () => setTimeout(hideLoader, 160));
 
-    // --- Screensaver ---
-    let idleTimer;
-    const SCREENSAVER_DELAY = 5 * 60 * 1000;
     const resetTimer = () => {
       clearTimeout(idleTimer);
-      document.getElementById('screensaver')?.classList.remove('show');
-      idleTimer = setTimeout(() => {
-        document.getElementById('screensaver')?.classList.add('show');
-      }, SCREENSAVER_DELAY);
+      hideScreensaver();
+      idleTimer = setTimeout(showScreensaver, SCREENSAVER_DELAY);
     };
-    ['mousemove', 'mousedown', 'touchstart', 'keydown', 'scroll'].forEach(ev =>
-      document.addEventListener(ev, resetTimer, { passive: true })
-    );
+
+    const events = ['mousemove', 'mousedown', 'touchstart', 'keydown', 'scroll'];
+    events.forEach(ev => document.addEventListener(ev, resetTimer, { passive: true }));
     resetTimer();
 
-    // --- Hover Preview & Popups (lógica original adaptada) ---
+    // ─── HOVER PREVIEW & POPUPS ───────────────────────────────────────
     const highResPath = (path) => {
       if (!path) return path;
       const parts = path.split('.');
       if (parts.length < 2) return path;
       const ext = parts.pop();
-      return `${parts.join('.')}${ext.includes('@2x') ? '' : '@2x'}.${ext}`;
-    };
-
-    const positionPreview = (x, y) => {
-      const hp = document.getElementById('hoverPreview');
-      if (!hp) return;
-      const rect = hp.getBoundingClientRect();
-      let left = x + 18, top = y + 18;
-      if (left + rect.width > window.innerWidth - 12) left = x - rect.width - 18;
-      if (top + rect.height > window.innerHeight - 12) top = y - rect.height - 18;
-      hp.style.transform = `translate3d(${left}px, ${top}px, 0) scale(1)`;
+      const base = parts.join('.');
+      return `${base}@2x.${ext}`;
     };
 
     const boxes = document.querySelectorAll('.image-box');
+    const hoverPreview = document.getElementById('hoverPreview');
+    const popup = document.getElementById('popup');
+    const popupCollab = document.getElementById('popup-collab');
+
+    const positionPreview = (x, y) => {
+      if (!hoverPreview) return;
+      const pad = 12;
+      const rect = hoverPreview.getBoundingClientRect();
+      let left = x + 18;
+      let top = y + 18;
+      if (left + rect.width + pad > window.innerWidth) left = x - rect.width - 18;
+      if (top + rect.height + pad > window.innerHeight) top = y - rect.height - 18;
+      hoverPreview.style.transform = `translate3d(${left}px, ${top}px, 0) scale(1)`;
+    };
+
     boxes.forEach(box => {
-      let timer;
-      box.addEventListener('mouseenter', e => {
-        timer = setTimeout(() => {
-          const imgPath = box.dataset.img;
+      let showTimer = null;
+
+      box.addEventListener('mouseenter', (e) => {
+        showTimer = setTimeout(() => {
+          const imgPath = box.dataset.img || '';
+          const candidate = highResPath(imgPath);
+
           const previewThumb = document.getElementById('previewThumb');
+          const previewTitle = document.getElementById('previewTitle');
+          const previewDesc = document.getElementById('previewDesc');
+
           if (previewThumb) {
-            previewThumb.src = highResPath(imgPath);
-            previewThumb.onerror = () => previewThumb.src = imgPath;
+            previewThumb.src = candidate;
+            previewThumb.onerror = () => { previewThumb.src = imgPath; };
           }
-          document.getElementById('previewTitle').textContent = box.dataset.title;
-          document.getElementById('previewDesc').textContent = box.dataset.desc;
-          document.getElementById('hoverPreview').classList.add('active');
-          positionPreview(e.clientX, e.clientY);
+          if (previewTitle) previewTitle.textContent = box.dataset.title || '';
+          if (previewDesc) previewDesc.textContent = box.dataset.desc || '';
+
+          if (hoverPreview) {
+            hoverPreview.classList.add('active');
+            hoverPreview.setAttribute('aria-hidden', 'false');
+            positionPreview(e.clientX, e.clientY);
+          }
         }, 110);
       });
-      box.addEventListener('mousemove', e => positionPreview(e.clientX, e.clientY));
-      box.addEventListener('mouseleave', () => {
-        clearTimeout(timer);
-        document.getElementById('hoverPreview')?.classList.remove('active');
-      });
-      box.addEventListener('click', () => {
-        const imgPath = box.dataset.img;
-        const popupImg = document.getElementById('popup-img');
-        if (popupImg) {
-          popupImg.src = highResPath(imgPath);
-          popupImg.onerror = () => popupImg.src = imgPath;
+
+      box.addEventListener('mousemove', (e) => {
+        if (hoverPreview && hoverPreview.classList.contains('active')) {
+          positionPreview(e.clientX, e.clientY);
         }
-        document.getElementById('popup-title').textContent = box.dataset.title;
-        document.getElementById('popup-desc').textContent = box.dataset.desc;
-        document.getElementById('popup').classList.add('active');
-        document.body.style.overflow = 'hidden';
+      });
+
+      box.addEventListener('mouseleave', () => {
+        clearTimeout(showTimer);
+        if (hoverPreview) {
+          hoverPreview.classList.remove('active');
+          hoverPreview.setAttribute('aria-hidden', 'true');
+        }
+      });
+
+      box.addEventListener('click', () => {
+        const imgPath = box.dataset.img || '';
+        const candidate = highResPath(imgPath);
+
+        const popupImg = document.getElementById('popup-img');
+        const popupTitle = document.getElementById('popup-title');
+        const popupDesc = document.getElementById('popup-desc');
+
+        if (popupImg) {
+          popupImg.src = candidate;
+          popupImg.onerror = () => { popupImg.src = imgPath; };
+        }
+        if (popupTitle) popupTitle.textContent = box.dataset.title || '';
+        if (popupDesc) popupDesc.textContent = box.dataset.desc || '';
+
+        if (popup) {
+          popup.classList.add('active');
+          popup.setAttribute('aria-hidden', 'false');
+          document.body.style.overflow = 'hidden';
+        }
       });
     });
 
-    // --- Colaboradores entrance ---
-    document.querySelectorAll('.collaborator').forEach((c, i) => {
-      setTimeout(() => c.classList.add('visible'), 80 * i + 120);
+    // ─── COLLABORATORS ────────────────────────────────────────────────
+    const collaborators = document.querySelectorAll('.collaborator');
+    collaborators.forEach((coll, idx) => {
+      setTimeout(() => coll.classList.add('visible'), 80 * idx + 120);
     });
 
-    // --- Cierre con ESC / click fuera ---
+    collaborators.forEach(coll => {
+      coll.addEventListener('click', () => {
+        const fullImg = coll.getAttribute('data-coll-img-full') || coll.dataset.collImgFull || '';
+        const headImg = coll.getAttribute('data-coll-img') || coll.dataset.collImg || '';
+        const tileImg = coll.querySelector('img')?.src || '';
+        const chosen = fullImg || headImg || tileImg || '';
+
+        const popupCollabImg = document.getElementById('popup-collab-img');
+        const popupCollabTitle = document.getElementById('popup-collab-title');
+        const popupCollabDesc = document.getElementById('popup-collab-desc');
+
+        if (popupCollabImg) {
+          popupCollabImg.src = chosen;
+          popupCollabImg.onerror = () => { popupCollabImg.src = chosen; };
+        }
+
+        const name = coll.querySelector('.name')?.textContent || '';
+        const desc = coll.getAttribute('data-coll-desc') || coll.dataset.collDesc || '';
+
+        if (popupCollabTitle) popupCollabTitle.textContent = name;
+        if (popupCollabDesc) {
+          popupCollabDesc.innerHTML = (desc || '').replace(/\n/g, '<br>');
+        }
+
+        if (popupCollab) {
+          popupCollab.classList.add('active');
+          popupCollab.setAttribute('aria-hidden', 'false');
+          document.body.style.overflow = 'hidden';
+        }
+      });
+    });
+
+    // ─── CLOSE POPUPS ─────────────────────────────────────────────────
     const closePopups = () => {
-      document.getElementById('popup')?.classList.remove('active');
-      document.getElementById('popup-collab')?.classList.remove('active');
+      if (popup) {
+        popup.classList.remove('active');
+        popup.setAttribute('aria-hidden', 'true');
+      }
+      if (popupCollab) {
+        popupCollab.classList.remove('active');
+        popupCollab.setAttribute('aria-hidden', 'true');
+      }
       document.body.style.overflow = '';
     };
-    document.addEventListener('keydown', e => {
+
+    if (popup) popup.addEventListener('click', (e) => { if (e.target === popup) closePopups(); });
+    if (popupCollab) popupCollab.addEventListener('click', (e) => { if (e.target === popupCollab) closePopups(); });
+
+    const closeButtons = document.querySelectorAll('.popup-close');
+    closeButtons.forEach(btn => btn.addEventListener('click', closePopups));
+
+    document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closePopups();
     });
-    document.getElementById('popup')?.addEventListener('click', e => {
-      if (e.target.id === 'popup') closePopups();
-    });
-    document.getElementById('popup-collab')?.addEventListener('click', e => {
-      if (e.target.id === 'popup-collab') closePopups();
-    });
-    document.querySelectorAll('.popup-close').forEach(btn => {
-      btn.addEventListener('click', closePopups);
-    });
 
-    // --- Touch devices ---
-    if (('ontouchstart' in window) || navigator.maxTouchPoints > 0) {
-      document.getElementById('hoverPreview').style.display = 'none';
-    }
+    // ─── TOUCH DEVICES ────────────────────────────────────────────────
+    const isTouch = () => ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    if (isTouch() && hoverPreview) {
+      hoverPreview.style.display = 'none';
+    };
+
+    // Cleanup (optional for static site)
+    return () => {
+      events.forEach(ev => document.removeEventListener(ev, resetTimer));
+      document.removeEventListener('keydown', () => {});
+    };
   }, []);
 
   return (
@@ -187,105 +247,127 @@ export default function HomePage() {
           ></iframe>
         </div>
 
-        {/* Galería fija (tu contenido original) */}
         <div className="image-placeholder">
-          {[
-            { title: 'Abandoned Hospital', desc: 'Abandoned hospital found...', img: 'https://liminaal.github.io/assets/images/hospital.png', date: 'found - november 2025' },
-            { title: 'Cold Loneliness', desc: 'Cold halls and colder hearts.', img: 'https://liminaal.github.io/assets/images/cold-loneliness.jpg', date: 'somewhere inside' },
-            { title: 'Oppressive Cells', desc: 'Cells full of silence.', img: 'https://liminaal.github.io/assets/images/oppressive-cells.jpg', date: 'locked memories' },
-            { title: '???', desc: '???', img: 'https://liminaal.github.io/assets/images/unknown.png', date: '???' }
-          ].map((item, i) => (
-            <div
-              key={i}
-              className="image-box"
-              data-title={item.title}
-              data-desc={item.desc}
-              data-img={item.img}
-            >
-              <img className="thumb" src={item.img} alt={item.title} loading="lazy" decoding="async" />
-              <div className="meta">
-                <div className="title">{item.title}</div>
-                <div className="sub">{item.date}</div>
-              </div>
+          <div
+            className="image-box"
+            data-title="Abandoned Hospital"
+            data-desc="Abandoned hospital found..."
+            data-img="https://liminaal.github.io/assets/images/hospital.png"
+          >
+            <img
+              className="thumb"
+              src="https://liminaal.github.io/assets/images/hospital.png"
+              alt="Abandoned Hospital"
+              loading="lazy"
+              decoding="async"
+            />
+            <div className="meta">
+              <div className="title">Abandoned Hospital</div>
+              <div className="sub">found - november 2025</div>
             </div>
-          ))}
+          </div>
+
+          <div
+            className="image-box"
+            data-title="Cold Loneliness"
+            data-desc="Cold halls and colder hearts."
+            data-img="https://liminaal.github.io/assets/images/cold-loneliness.jpg"
+          >
+            <img
+              className="thumb"
+              src="https://liminaal.github.io/assets/images/cold-loneliness.jpg"
+              alt="Cold Loneliness"
+              loading="lazy"
+              decoding="async"
+            />
+            <div className="meta">
+              <div className="title">Cold Loneliness</div>
+              <div className="sub">somewhere inside</div>
+            </div>
+          </div>
+
+          <div
+            className="image-box"
+            data-title="Oppressive Cells"
+            data-desc="Cells full of silence."
+            data-img="https://liminaal.github.io/assets/images/oppressive-cells.jpg"
+          >
+            <img
+              className="thumb"
+              src="https://liminaal.github.io/assets/images/oppressive-cells.jpg"
+              alt="Oppressive Cells"
+              loading="lazy"
+              decoding="async"
+            />
+            <div className="meta">
+              <div className="title">Oppressive Cells</div>
+              <div className="sub">locked memories</div>
+            </div>
+          </div>
+
+          <div
+            className="image-box"
+            data-title="???"
+            data-desc="???"
+            data-img="https://liminaal.github.io/assets/images/unknown.png"
+          >
+            <img
+              className="thumb"
+              src="https://liminaal.github.io/assets/images/unknown.png"
+              alt="???"
+              loading="lazy"
+              decoding="async"
+            />
+            <div className="meta">
+              <div className="title">???</div>
+              <div className="sub">???</div>
+            </div>
+          </div>
         </div>
 
-        {/* Comunidad (desde Supabase) */}
-        {communityImages.length > 0 && (
-          <>
-            <h2 style={{ textAlign: 'center', marginTop: '4rem', fontSize: '1.8rem', opacity: 0.7 }}>Comunidad</h2>
-            <div className="image-placeholder">
-              {communityImages.map(img => (
-                <div
-                  key={img.id}
-                  className="image-box"
-                  data-title={img.title || 'Sin título'}
-                  data-desc={img.description || ''}
-                  data-img={img.url}
-                >
-                  <img className="thumb" src={img.url} alt={img.title || 'Comunidad'} loading="lazy" decoding="async" />
-                  <div className="meta">
-                    <div className="title">{img.title || 'Comunidad'}</div>
-                    <div className="sub">{new Date(img.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Colaboradores */}
         <div className="collab-wrap">
           <div className="collab-head">
             <h2>Collaborators</h2>
           </div>
           <div className="collaborators" id="collaborators">
-            {[
-              {
-                name: 'Kaido',
-                img: 'https://liminaal.github.io/assets/mii/Kaido%20head.png',
-                desc: "Kaido — a young boy that likes photographing & coding.\nhe started when he was 11 y/o creating a Minecraft bot, then started taking ambiental photos when he was 13."
-              },
-              {
-                name: 'Awitax',
-                img: 'https://liminaal.github.io/assets/mii/Awitax%20head.png',
-                desc: "Awitax — a young girl that loves drawing & gaming."
-              }
-            ].map((collab, i) => (
-              <div
-                key={i}
-                className="collaborator"
-                data-coll-img={collab.img}
-                data-coll-img-full={collab.img}
-                data-coll-desc={collab.desc}
-                onClick={() => {
-                  document.getElementById('popup-collab-img').src = collab.img;
-                  document.getElementById('popup-collab-title').textContent = collab.name;
-                  document.getElementById('popup-collab-desc').innerHTML = collab.desc.replace(/\n/g, '<br>');
-                  document.getElementById('popup-collab').classList.add('active');
-                  document.body.style.overflow = 'hidden';
-                }}
-              >
-                <img src={collab.img} alt={collab.name} loading="lazy" />
-                <div className="name">{collab.name}</div>
-                <div className="role"></div>
-              </div>
-            ))}
+            <div
+              className="collaborator"
+              data-coll-img="https://liminaal.github.io/assets/mii/Kaido%20head.png"
+              data-coll-img-full="https://liminaal.github.io/assets/mii/Kaido%20head.png"
+              data-coll-desc="Kaido — a young boy that likes photographing & coding.
+he started when he was 11 y/o creating a Minecraft bot, then started taking ambiental photos when he was 13."
+            >
+              <img src="https://liminaal.github.io/assets/mii/Kaido%20head.png" alt="Kaido" />
+              <div className="name">Kaido</div>
+              <div className="role"></div>
+            </div>
+
+            <div
+              className="collaborator"
+              data-coll-img="https://liminaal.github.io/assets/mii/Awitax%20head.png"
+              data-coll-img-full="https://liminaal.github.io/assets/mii/Awitax%20head.png"
+              data-coll-desc="Awitax — a young girl that loves drawing & gaming."
+            >
+              <img src="https://liminaal.github.io/assets/mii/Awitax%20head.png" alt="Awitax" />
+              <div className="name">Awitax</div>
+              <div className="role"></div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Hover preview */}
+      {/* Hover Preview */}
       <div className="hover-preview" id="hoverPreview" aria-hidden="true">
-        <div className="preview-thumb"><img id="previewThumb" src="" alt="" /></div>
+        <div className="preview-thumb">
+          <img id="previewThumb" src="" alt="" />
+        </div>
         <div className="preview-meta">
           <h4 id="previewTitle"></h4>
           <p id="previewDesc"></p>
         </div>
       </div>
 
-      {/* Popup imagen */}
+      {/* Popup Imagen */}
       <div className="popup" id="popup" aria-hidden="true">
         <div className="popup-inner" role="dialog" aria-modal="true">
           <button className="popup-close" aria-label="Close">✕</button>
@@ -297,7 +379,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Popup colaborador */}
+      {/* Popup Colaborador */}
       <div className="popup-collab" id="popup-collab" aria-hidden="true">
         <div className="popup-inner" role="dialog" aria-modal="true">
           <button className="popup-close" aria-label="Close">✕</button>
