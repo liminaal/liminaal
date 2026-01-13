@@ -3,8 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 export default function HomePage() {
-  const [loading, setLoading] = useState(true);
-  const [images, setImages] = useState([]);
+  const [communityImages, setCommunityImages] = useState([]);
   const [collaborators, setCollaborators] = useState([]);
   const [hoverPreview, setHoverPreview] = useState({ visible: false, x: 0, y: 0, data: null });
   const [popup, setPopup] = useState({ open: false, data: null });
@@ -14,43 +13,45 @@ export default function HomePage() {
   const idleTimerRef = useRef(null);
   const hoverTimerRef = useRef(null);
 
-  // ─── Cargar datos desde Supabase ───────────────────────────────
+  // ─── Cargar imágenes aprobadas y colaboradores ─────────────────────
   useEffect(() => {
     const fetchData = async () => {
-      const { data: imageData } = await supabase
+      // Imágenes aprobadas de la comunidad
+      const { data: imagesData } = await supabase
         .from('images')
         .select('*')
-        .eq('approved', true)
+        .eq('status', 'approved')
         .order('created_at', { ascending: false });
 
+      // Colaboradores
       const { data: collabData } = await supabase
         .from('profiles')
         .select('*')
         .eq('is_collaborator', true)
         .order('full_name');
 
-      setImages(imageData || []);
+      setCommunityImages(imagesData || []);
       setCollaborators(collabData || []);
-      setLoading(false);
     };
 
     fetchData();
   }, []);
 
-  // ─── Ocultar loader tras carga ──────────────────────────────────
+  // ─── Loader inicial (como en tu HTML) ──────────────────────────────
   useEffect(() => {
-    if (!loading) {
-      const timer = setTimeout(() => {
-        const loader = document.getElementById('siteLoader');
-        const content = document.getElementById('siteContent');
-        if (loader) loader.classList.add('hidden');
-        if (content) content.setAttribute('aria-hidden', 'false');
-      }, 160);
-      return () => clearTimeout(timer);
-    }
-  }, [loading]);
+    const hideLoader = () => {
+      document.getElementById('siteLoader')?.classList.add('hidden');
+      document.getElementById('siteContent')?.setAttribute('aria-hidden', 'false');
+    };
 
-  // ─── Screensaver (5 min idle) ───────────────────────────────────
+    if (document.readyState === 'complete') {
+      setTimeout(hideLoader, 120);
+    } else {
+      window.addEventListener('load', () => setTimeout(hideLoader, 160));
+    }
+  }, []);
+
+  // ─── Screensaver (5 min idle) ───────────────────────────────────────
   useEffect(() => {
     const resetTimer = () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -69,7 +70,7 @@ export default function HomePage() {
     };
   }, []);
 
-  // ─── Interacciones ──────────────────────────────────────────────
+  // ─── Interacciones ──────────────────────────────────────────────────
   const showHoverPreview = (e, img) => {
     hoverTimerRef.current = setTimeout(() => {
       setHoverPreview({
@@ -108,10 +109,18 @@ export default function HomePage() {
     document.body.style.overflow = 'hidden';
   };
 
-  // ─── Render ─────────────────────────────────────────────────────
+  // ─── Tus imágenes originales (fijas, como en tu HTML) ───────────────
+  const staticImages = [
+    { id: 'static-1', title: 'Abandoned Hospital', desc: 'Abandoned hospital found...', img: '/assets/images/hospital.png', date: 'november 2025' },
+    { id: 'static-2', title: 'Cold Loneliness', desc: 'Cold halls and colder hearts.', img: '/assets/images/cold-loneliness.jpg', date: 'somewhere inside' },
+    { id: 'static-3', title: 'Oppressive Cells', desc: 'Cells full of silence.', img: '/assets/images/oppressive-cells.jpg', date: 'locked memories' },
+    { id: 'static-4', title: '???', desc: '???', img: '/assets/images/unknown.png', date: '???' },
+  ];
+
+  // ─── Render ─────────────────────────────────────────────────────────
   return (
     <>
-      {/* Loader (igual que en tu HTML) */}
+      {/* Loader */}
       <div className="loader" id="siteLoader" role="status" aria-hidden="false">
         <div className="loader-inner">
           <div className="label">liminaalizing</div>
@@ -122,17 +131,9 @@ export default function HomePage() {
       </div>
 
       <div className="container" id="siteContent" aria-hidden="true">
-        {/* Screensaver */}
         {screensaverActive && (
           <div id="screensaver" className="show">
-            <iframe
-              id="iframe-ss"
-              src="/assets/screensaver"
-              width="100%"
-              height="100%"
-              frameBorder="0"
-              title="Screensaver"
-            ></iframe>
+            <iframe id="iframe-ss" src="/assets/screensaver" width="100%" height="100%" frameBorder="0"></iframe>
           </div>
         )}
 
@@ -149,47 +150,58 @@ export default function HomePage() {
           ></iframe>
         </div>
 
-        {/* Galería dinámica */}
+        {/* Galería estática (tus imágenes originales) */}
         <div className="image-placeholder">
-          {images.length > 0 ? (
-            images.map((img) => (
-              <div
-                key={img.id}
-                className="image-box"
-                data-title={img.title}
-                data-desc={img.description}
-                data-img={img.image_url}
-                onMouseEnter={(e) => showHoverPreview(e, img)}
-                onMouseMove={moveHoverPreview}
-                onMouseLeave={hideHoverPreview}
-                onClick={() => openImagePopup(img)}
-              >
-                <img
-                  className="thumb"
-                  src={img.image_url}
-                  alt={img.title}
-                  loading="lazy"
-                  decoding="async"
-                />
-                <div className="meta">
-                  <div className="title">{img.title}</div>
-                  <div className="sub">
-                    {new Date(img.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          {staticImages.map((img) => (
+            <div
+              key={img.id}
+              className="image-box"
+              data-title={img.title}
+              data-desc={img.desc}
+              data-img={img.img}
+              onMouseEnter={(e) => showHoverPreview(e, img)}
+              onMouseMove={moveHoverPreview}
+              onMouseLeave={hideHoverPreview}
+              onClick={() => openImagePopup(img)}
+            >
+              <img className="thumb" src={img.img} alt={img.title} loading="lazy" decoding="async" />
+              <div className="meta">
+                <div className="title">{img.title}</div>
+                <div className="sub">{img.date}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Comunidad (imágenes aprobadas de Supabase) */}
+        {communityImages.length > 0 && (
+          <>
+            <h2 style={{ textAlign: 'center', marginTop: '4rem', fontSize: '1.8rem', opacity: 0.7 }}>Comunidad</h2>
+            <div className="image-placeholder">
+              {communityImages.map((img) => (
+                <div
+                  key={img.id}
+                  className="image-box"
+                  data-title={img.title || 'Sin título'}
+                  data-desc={img.description || ''}
+                  data-img={img.url}
+                  onMouseEnter={(e) => showHoverPreview(e, img)}
+                  onMouseMove={moveHoverPreview}
+                  onMouseLeave={hideHoverPreview}
+                  onClick={() => openImagePopup(img)}
+                >
+                  <img className="thumb" src={img.url} alt={img.title || 'Comunidad'} loading="lazy" decoding="async" />
+                  <div className="meta">
+                    <div className="title">{img.title || 'Comunidad'}</div>
+                    <div className="sub">
+                      {new Date(img.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
-          ) : (
-            !loading && (
-              <div className="image-box">
-                <div className="meta">
-                  <div className="title">No images yet</div>
-                  <div className="sub">Check back soon</div>
-                </div>
-              </div>
-            )
-          )}
-        </div>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Colaboradores */}
         <div className="collab-wrap">
@@ -197,27 +209,25 @@ export default function HomePage() {
             <h2>Collaborators</h2>
           </div>
           <div className="collaborators" id="collaborators">
-            {collaborators.map((collab, idx) => (
+            {(collaborators.length > 0 ? collaborators : [
+              // Fallback: tus colaboradores originales si no hay en DB
+              { id: 'kaido', full_name: 'Kaido', avatar_url: '/assets/mii/Kaido head.png', bio: "Kaido — a young boy that likes photographing & coding.\nhe started when he was 11 y/o creating a Minecraft bot, then started taking ambiental photos when he was 13.", role: '' },
+              { id: 'awitax', full_name: 'Awitax', avatar_url: '/assets/mii/Awitax head.png', bio: "Awitax — a young girl that loves drawing & gaming.", role: '' }
+            ]).map((collab, idx) => (
               <div
                 key={collab.id}
                 className="collaborator"
                 data-coll-img={collab.avatar_url}
                 data-coll-img-full={collab.avatar_url}
-                data-coll-desc={collab.bio || `${collab.full_name} — ${collab.role || ''}`}
+                data-coll-desc={collab.bio || ''}
                 onClick={() => openCollabPopup(collab)}
                 ref={(el) => {
-                  if (el && !loading) {
-                    setTimeout(() => {
-                      el.classList.add('visible');
-                    }, 80 * idx + 120);
+                  if (el) {
+                    setTimeout(() => el.classList.add('visible'), 80 * idx + 120);
                   }
                 }}
               >
-                <img
-                  src={collab.avatar_url}
-                  alt={collab.full_name}
-                  loading="lazy"
-                />
+                <img src={collab.avatar_url} alt={collab.full_name} loading="lazy" />
                 <div className="name">{collab.full_name}</div>
                 <div className="role">{collab.role}</div>
               </div>
@@ -236,15 +246,11 @@ export default function HomePage() {
           aria-hidden="false"
         >
           <div className="preview-thumb">
-            <img
-              id="previewThumb"
-              src={hoverPreview.data.image_url}
-              alt={hoverPreview.data.title}
-            />
+            <img id="previewThumb" src={hoverPreview.data.img || hoverPreview.data.url} alt="" />
           </div>
           <div className="preview-meta">
             <h4 id="previewTitle">{hoverPreview.data.title}</h4>
-            <p id="previewDesc">{hoverPreview.data.description}</p>
+            <p id="previewDesc">{hoverPreview.data.desc || hoverPreview.data.description}</p>
           </div>
         </div>
       )}
@@ -255,13 +261,9 @@ export default function HomePage() {
           <div className="popup-inner" onClick={(e) => e.stopPropagation()}>
             <button className="popup-close" onClick={closePopups} aria-label="Close">✕</button>
             <div className="popup-content">
-              <img
-                id="popup-img"
-                src={popup.data.image_url}
-                alt={popup.data.title}
-              />
+              <img id="popup-img" src={popup.data.img || popup.data.url} alt={popup.data.title} />
               <h3 id="popup-title">{popup.data.title}</h3>
-              <p id="popup-desc">{popup.data.description}</p>
+              <p id="popup-desc">{popup.data.desc || popup.data.description}</p>
             </div>
           </div>
         </div>
@@ -273,11 +275,7 @@ export default function HomePage() {
           <div className="popup-inner" onClick={(e) => e.stopPropagation()}>
             <button className="popup-close" onClick={closePopups} aria-label="Close">✕</button>
             <div className="collab-left">
-              <img
-                id="popup-collab-img"
-                src={collabPopup.data.avatar_url}
-                alt={collabPopup.data.full_name}
-              />
+              <img id="popup-collab-img" src={collabPopup.data.avatar_url} alt={collabPopup.data.full_name} />
             </div>
             <div className="collab-right">
               <h3 id="popup-collab-title">{collabPopup.data.full_name}</h3>
@@ -304,14 +302,9 @@ export default function HomePage() {
               if (e.key === 'Escape') {
                 const popup = document.querySelector('.popup.active');
                 const collabPopup = document.querySelector('.popup-collab.active');
-                if (popup) {
-                  popup.classList.remove('active');
-                  document.body.style.overflow = '';
-                }
-                if (collabPopup) {
-                  collabPopup.classList.remove('active');
-                  document.body.style.overflow = '';
-                }
+                if (popup) popup.classList.remove('active');
+                if (collabPopup) collabPopup.classList.remove('active');
+                document.body.style.overflow = '';
               }
             });
           `
